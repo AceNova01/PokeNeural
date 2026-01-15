@@ -14,3 +14,5 @@ Create Key: Click "Create API key in new project".
 Copy the Key: A long string of letters and numbers will appear. Copy this immediately.
 
 Paste this key into the website to start battling!
+
+And also, everything is free just click past the premium stuff. Thats just a template for upcoming updates, if the AI recieves good feedback and people want to see me complete this.
