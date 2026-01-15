@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PokeNeural Lab - Full Strategic Engine</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulse-slow { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        .animate-in { animation: fadeIn 0.3s ease-out forwards; }
+        .animate-pulse-slow { animation: pulse-slow 3s infinite ease-in-out; }
+        .pro-blur { filter: blur(12px); pointer-events: none; user-select: none; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- Icons ---
+        const Zap = ({ size = 20 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>;
+        const Search = ({ size = 18 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>;
+        const Key = ({ size = 18 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3y-3.5 3.5"/></svg>;
+        const Sliders = ({ size = 16 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M2 14h4m4-6h4m4 8h4"/></svg>;
+        const X = ({ size = 16 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>;
+        const ChevronDown = ({ size = 14 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6"/></svg>;
+        const HelpCircle = ({ size = 18 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
+        const Crown = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>;
+        const Check = ({ size = 16 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>;
+
+        const STAT_NAMES = { hp: 'HP', attack: 'Atk', defense: 'Def', 'special-attack': 'SpA', 'special-defense': 'SpD', speed: 'Spe' };
+
+        // --- Core Components ---
+
+        const TypeBadge = ({ type }) => (
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase shadow-sm bg-slate-500">
+                {type}
+            </span>
+        );
+
+        const MoveDropdown = ({ options, onSelect, selectedMove }) => {
+            const [isOpen, setIsOpen] = useState(false);
+            return (
+                <div className="relative">
+                    <button onClick={() => setIsOpen(!isOpen)} className={`w-full flex items-center justify-between p-2 rounded-xl border text-[10px] font-bold truncate ${selectedMove ? 'bg-indigo-50 border-indigo-200' : 'bg-white'}`}>
+                        <span className="truncate capitalize">{selectedMove ? selectedMove.name.replace(/-/g, ' ') : 'Select Move'}</span>
+                        <ChevronDown />
+                    </button>
+                    {isOpen && (
+                        <div className="absolute z-[100] w-full mt-1 bg-white border rounded-xl shadow-xl max-h-40 overflow-y-auto custom-scrollbar">
+                            {options.map(m => (
+                                <button key={m.name} onClick={() => { onSelect(m.name); setIsOpen(false); }} className="w-full text-left p-2 hover:bg-slate-50 text-[10px] capitalize border-b last:border-0">{m.name.replace(/-/g, ' ')}</button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        function App() {
+            const [isPro, setIsPro] = useState(false);
+            const [showProPricing, setShowProPricing] = useState(false);
+            const [battleMode, setBattleMode] = useState('solo');
+            const [p1, setP1] = useState(null);
+            const [p2, setP2] = useState(null);
+            const [teamA, setTeamA] = useState([]);
+            const [teamB, setTeamB] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [strategy, setStrategy] = useState(null);
+            const [apiKey, setApiKey] = useState(localStorage.getItem('POKENEURAL_KEY') || "");
+            const [showKeyModal, setShowKeyModal] = useState(!apiKey);
+            const [showInstructions, setShowInstructions] = useState(false);
+
+            const saveKey = (val) => {
+                localStorage.setItem('POKENEURAL_KEY', val);
+                setApiKey(val);
+                setShowKeyModal(false);
+            };
+
+            const PokemonSearch = ({ label, onSelect }) => {
+                const [q, setQ] = useState("");
+                const [results, setResults] = useState([]);
+                useEffect(() => {
+                    if (q.length < 2) return;
+                    const t = setTimeout(async () => {
+                        const res = await fetch(`https://pokeapi.co/api/v2/pokemon?limit=1000`);
+                        const data = await res.json();
+                        setResults(data.results.filter(x => x.name.includes(q.toLowerCase())).slice(0, 5));
+                    }, 300);
+                    return () => clearTimeout(t);
+                }, [q]);
+
+                const select = async (name) => {
+                    const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${name}`);
+                    const data = await res.json();
+                    onSelect({
+                        id: Math.random(),
+                        name: data.name,
+                        sprite: data.sprites.front_default,
+                        types: data.types.map(t => t.type.name),
+                        stats: data.stats.reduce((acc, s) => ({...acc, [s.stat.name]: s.base_stat}), {}),
+                        level: 50,
+                        moves: data.moves.map(m => m.move),
+                        selectedMoves: [null, null, null, null],
+                        showAdvanced: false
+                    });
+                    setQ(""); setResults([]);
+                };
+
+                return (
+                    <div className="relative">
+                        <div className="relative">
+                            <div className="absolute left-4 top-4 text-slate-400"><Search size={16}/></div>
+                            <input type="text" placeholder={label} value={q} onChange={e => setQ(e.target.value)}
+                                className="w-full bg-white border border-slate-200 p-4 pl-12 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm" />
+                        </div>
+                        {results.length > 0 && (
+                            <div className="absolute top-full w-full bg-white border rounded-xl mt-2 z-[150] shadow-xl overflow-hidden">
+                                {results.map(r => <button key={r.name} onClick={() => select(r.name)} className="w-full text-left p-3 text-xs capitalize hover:bg-indigo-50 font-bold">{r.name}</button>)}
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+
+            const PokemonCard = ({ pokemon, setPokemon, label }) => {
+                if (!pokemon) return <div className="bg-slate-100 border-2 border-dashed border-slate-300 rounded-3xl p-10 text-center text-slate-400 font-black text-[10px] uppercase tracking-widest min-h-[200px] flex items-center justify-center">{label}</div>;
+                
+                const updateMove = async (idx, name) => {
+                    const res = await fetch(`https://pokeapi.co/api/v2/move/${name}`);
+                    const data = await res.json();
+                    const newMoves = [...pokemon.selectedMoves];
+                    newMoves[idx] = { name: data.name, power: data.power || 0 };
+                    setPokemon({...pokemon, selectedMoves: newMoves});
+                };
+
+                return (
+                    <div className="bg-white border p-5 rounded-3xl shadow-sm space-y-4 animate-in group relative">
+                        <div className="flex justify-between items-center">
+                            <div className="flex items-center space-x-3">
+                                <img src={pokemon.sprite} className="w-12 h-12 bg-slate-50 rounded-xl" />
+                                <div>
+                                    <h3 className="text-sm font-black capitalize text-slate-800">{pokemon.name} <span className="text-indigo-500 text-[9px]">Lvl {pokemon.level}</span></h3>
+                                    <div className="flex space-x-1">{pokemon.types.map(t => <TypeBadge key={t} type={t} />)}</div>
+                                </div>
+                            </div>
+                            <div className="flex space-x-1">
+                                <button onClick={() => setPokemon({...pokemon, showAdvanced: !pokemon.showAdvanced})} className={`p-2 rounded-lg ${pokemon.showAdvanced ? 'bg-indigo-600 text-white' : 'bg-slate-50 text-slate-400'}`}><Sliders size={14}/></button>
+                                <button onClick={() => setPokemon(null)} className="p-2 rounded-lg bg-slate-50 text-slate-300"><X size={14}/></button>
+                            </div>
+                        </div>
+                        
+                        {pokemon.showAdvanced && (
+                            <div className="bg-slate-900 rounded-2xl p-4 space-y-3">
+                                <div className="flex justify-between items-center text-white border-b border-white/10 pb-2">
+                                    <span className="text-[8px] font-black uppercase text-white/50">Level</span>
+                                    <input type="number" value={pokemon.level} onChange={e => setPokemon({...pokemon, level: e.target.value})} className="bg-white/10 w-10 text-center text-[10px] font-bold rounded" />
+                                </div>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {Object.entries(pokemon.stats).map(([k, v]) => (
+                                        <div key={k} className="text-center">
+                                            <p className="text-white/40 text-[7px] font-black uppercase">{STAT_NAMES[k]}</p>
+                                            <input type="number" value={v} onChange={e => setPokemon({...pokemon, stats: {...pokemon.stats, [k]: parseInt(e.target.value)||0}})} className="w-full bg-white/10 text-white text-[10px] font-bold text-center rounded p-1" />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-2">
+                            {[0,1,2,3].map(i => (
+                                <MoveDropdown key={i} options={pokemon.moves.slice(0,50)} selectedMove={pokemon.selectedMoves[i]} onSelect={(n) => updateMove(i, n)} />
+                            ))}
+                        </div>
+                    </div>
+                );
+            };
+
+            const runSimulation = async () => {
+                if (!apiKey) { setShowKeyModal(true); return; }
+                setLoading(true);
+                setStrategy(null);
+
+                const serialize = (p) => ({ 
+                    name: p.name, 
+                    lvl: p.level, 
+                    stats: p.stats, 
+                    moves: p.selectedMoves.filter(m => m).map(m => m.name) 
+                });
+
+                const content = battleMode === 'solo' 
+                    ? `Solo: ${JSON.stringify(serialize(p1))} vs ${JSON.stringify(serialize(p2))}`
+                    : `Team A: ${JSON.stringify(teamA.map(serialize))} vs Team B: ${JSON.stringify(teamB.map(serialize))}`;
+
+                try {
+                    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: content + ". Provide JSON: { 'winProbability': 'string', 'itemRecommendation': 'string', 'steps': [{'turn': 1, 'action': 'string', 'reasoning': 'string'}] }" }] }],
+                            generationConfig: { responseMimeType: "application/json" }
+                        })
+                    });
+                    const data = await res.json();
+                    setStrategy(JSON.parse(data.candidates[0].content.parts[0].text));
+                } catch (e) {
+                    alert("AI Error. Check Key.");
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="min-h-screen relative">
+                    {/* PRO ACCESS GATE */}
+                    {!isPro && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 md:p-10">
+                            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-md"></div>
+                            <div className="relative bg-white max-w-2xl w-full rounded-[3rem] p-10 md:p-16 shadow-2xl text-center animate-in border border-slate-200">
+                                <div className="w-20 h-20 bg-indigo-600 text-white rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-xl shadow-indigo-200 animate-pulse-slow">
+                                    <Crown size={40} />
+                                </div>
+                                <h2 className="text-3xl md:text-4xl font-black tracking-tighter mb-4 text-slate-900 uppercase">Neural Lab Restricted</h2>
+                                <p className="text-slate-500 text-sm md:text-base leading-relaxed mb-10 max-w-md mx-auto">
+                                    Unlock the full potential of PokeNeural Lab. Access deep team simulations, strategic move analysis, and real-time win probability forecasting.
+                                </p>
+                                <button 
+                                    onClick={() => setShowProPricing(true)}
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-10 py-5 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] shadow-2xl shadow-indigo-200 transition-all active:scale-95"
+                                >
+                                    GO PRO — UNLOCK NOW
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* PRO PRICING MODAL */}
+                    {showProPricing && (
+                        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-950/90 backdrop-blur-xl animate-in">
+                            <div className="bg-white max-w-lg w-full rounded-[3rem] p-10 md:p-12 shadow-2xl relative">
+                                <button onClick={() => setShowProPricing(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-600"><X size={24}/></button>
+                                
+                                <div className="mb-10">
+                                    <span className="bg-indigo-100 text-indigo-600 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest mb-4 inline-block">Pro Access Plan</span>
+                                    <h3 className="text-3xl font-black text-slate-900 tracking-tighter mb-2">Elite Tactician Upgrade</h3>
+                                    <p className="text-slate-400 text-sm font-medium">Elevate your battle strategy with advanced AI.</p>
+                                </div>
+
+                                <div className="space-y-4 mb-10">
+                                    {[
+                                        "Unlimited Neural Simulations",
+                                        "Deep Team Synergy Analysis",
+                                        "Full Stat Customization (Advanced Mode)",
+                                        "Strategic Item & Move Recommendations",
+                                        "Zero Latency AI Processing",
+                                        "Priority Support for New Meta Updates"
+                                    ].map((benefit, i) => (
+                                        <div key={i} className="flex items-center space-x-3 text-slate-600">
+                                            <div className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center flex-shrink-0">
+                                                <Check size={12} />
+                                            </div>
+                                            <span className="text-xs font-bold">{benefit}</span>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="bg-slate-50 rounded-3xl p-6 mb-10 flex items-center justify-between border border-slate-100">
+                                    <div>
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lifetime License</p>
+                                        <div className="flex items-baseline space-x-1">
+                                            <span className="text-3xl font-black text-slate-900">$29</span>
+                                            <span className="text-slate-400 text-xs font-bold">.99</span>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <span className="text-[10px] font-black text-emerald-500 uppercase">Save 40%</span>
+                                        <p className="text-slate-400 line-through text-xs font-bold">$49.99</p>
+                                    </div>
+                                </div>
+
+                                <button 
+                                    onClick={() => { setIsPro(true); setShowProPricing(false); }}
+                                    className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-200"
+                                >
+                                    BUY PRO & START SIMULATING
+                                </button>
+                                <p className="text-center text-[9px] text-slate-400 mt-6 uppercase font-bold tracking-widest">Secure Checkout — Instant Access</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* API Key Modal */}
+                    {showKeyModal && (
+                        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[1000] flex items-center justify-center p-4">
+                            <div className="bg-white max-w-md w-full rounded-[2.5rem] p-10 shadow-2xl animate-in relative overflow-hidden">
+                                <div className="w-16 h-16 bg-indigo-100 rounded-3xl flex items-center justify-center text-indigo-600 mb-6"><Key size={32}/></div>
+                                
+                                <div className="flex items-center space-x-2 mb-2">
+                                    <h2 className="text-2xl font-black tracking-tight">Activate Neural Engine</h2>
+                                    <button 
+                                        onClick={() => setShowInstructions(!showInstructions)}
+                                        className="text-blue-500 hover:text-blue-600 transition-colors pt-1"
+                                        title="How to get a key?"
+                                    >
+                                        <HelpCircle size={22} />
+                                    </button>
+                                </div>
+
+                                {showInstructions ? (
+                                    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 mb-6 animate-in">
+                                        <div className="flex justify-between items-start mb-3">
+                                            <h3 className="font-black text-xs uppercase text-blue-700 tracking-wider">Setup Instructions</h3>
+                                            <button onClick={() => setShowInstructions(false)} className="text-blue-400 hover:text-blue-600"><X size={14}/></button>
+                                        </div>
+                                        <ol className="text-[11px] text-blue-800 space-y-2 list-decimal ml-4 font-medium leading-relaxed">
+                                            <li>Go to Google AI Studio: Visit <a href="https://aistudio.google.com" target="_blank" className="underline font-bold">aistudio.google.com</a>.</li>
+                                            <li>Sign In: Log in with your standard Google/Gmail account.</li>
+                                            <li>Get Key: On the left-hand sidebar, click the "Get API key" button.</li>
+                                            <li>Create Key: Click "Create API key in new project".</li>
+                                            <li>Copy the Key: A long string of letters and numbers will appear. Copy this immediately.</li>
+                                        </ol>
+                                    </div>
+                                ) : (
+                                    <p className="text-slate-500 text-sm mb-6 leading-relaxed">Paste your Gemini API key. This key stays on your computer only.</p>
+                                )}
+
+                                <input id="keyIn" type="password" placeholder="AI API Key..." className="w-full bg-slate-100 p-4 rounded-2xl mb-4 outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm" />
+                                <button onClick={() => saveKey(document.getElementById('keyIn').value)} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl hover:bg-indigo-700 shadow-xl transition-all">ACTIVATE ENGINE</button>
+                                
+                                <button onClick={() => setShowKeyModal(false)} className="w-full text-slate-400 font-black text-[10px] uppercase tracking-widest mt-4">Close</button>
+                            </div>
+                        </div>
+                    )}
+
+                    <header className="bg-white border-b sticky top-0 z-50 p-6 flex justify-between items-center shadow-sm">
+                        <div className="flex items-center space-x-2">
+                            <div className="text-indigo-600"><Zap size={24}/></div>
+                            <h1 className="font-black text-xl uppercase tracking-tighter">PokeNeural<span className="text-indigo-600">Lab</span></h1>
+                            {isPro && <div className="bg-indigo-600 text-white text-[8px] font-black px-2 py-1 rounded ml-2 flex items-center">PRO <Crown size={8} className="ml-1"/></div>}
+                        </div>
+                        <div className="flex items-center space-x-4">
+                            <button onClick={() => setShowKeyModal(true)} className="p-2 text-slate-400 hover:text-indigo-600 transition-colors"><Key size={18}/></button>
+                            <div className="bg-slate-100 p-1 rounded-2xl flex">
+                                <button onClick={() => setBattleMode('solo')} className={`px-5 py-2 rounded-xl text-xs font-black transition-all ${battleMode === 'solo' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>SOLO</button>
+                                <button onClick={() => setBattleMode('team')} className={`px-5 py-2 rounded-xl text-xs font-black transition-all ${battleMode === 'team' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>TEAM</button>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className={`max-w-7xl mx-auto p-6 md:p-10 grid lg:grid-cols-12 gap-10 transition-all duration-700 ${!isPro ? 'pro-blur' : ''}`}>
+                        <div className="lg:col-span-8 space-y-10">
+                            {battleMode === 'solo' ? (
+                                <div className="grid md:grid-cols-2 gap-8">
+                                    <div className="space-y-4"><PokemonSearch label="Search Attacker..." onSelect={setP1}/><PokemonCard pokemon={p1} setPokemon={setP1} label="Alpha Target"/></div>
+                                    <div className="space-y-4"><PokemonSearch label="Search Defender..." onSelect={setP2}/><PokemonCard pokemon={p2} setPokemon={setP2} label="Omega Target"/></div>
+                                </div>
+                            ) : (
+                                <div className="space-y-10">
+                                    <div className="space-y-4">
+                                        <h2 className="text-[10px] font-black uppercase text-indigo-600 tracking-widest border-b pb-2">Team Alpha</h2>
+                                        <div className="grid md:grid-cols-2 gap-4">
+                                            {teamA.map(p => <PokemonCard key={p.id} pokemon={p} setPokemon={val => val ? setTeamA(teamA.map(x => x.id===p.id?val:x)) : setTeamA(teamA.filter(x => x.id!==p.id))} />)}
+                                            {teamA.length < 6 && <PokemonSearch label="Add Nexus Member..." onSelect={p => setTeamA([...teamA, p])}/>}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <h2 className="text-[10px] font-black uppercase text-slate-500 tracking-widest border-b pb-2">Team Omega</h2>
+                                        <div className="grid md:grid-cols-2 gap-4">
+                                            {teamB.map(p => <PokemonCard key={p.id} pokemon={p} setPokemon={val => val ? setTeamB(teamB.map(x => x.id===p.id?val:x)) : setTeamB(teamB.filter(x => x.id!==p.id))} />)}
+                                            {teamB.length < 6 && <PokemonSearch label="Add Omega Member..." onSelect={p => setTeamB([...teamB, p])}/>}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="lg:col-span-4">
+                            <div className="bg-slate-900 rounded-[3rem] p-8 text-white shadow-2xl sticky top-32">
+                                {loading ? (
+                                    <div className="py-20 text-center animate-pulse">
+                                        <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
+                                        <p className="text-[10px] font-black uppercase tracking-widest">Processing Neural Pathways...</p>
+                                    </div>
+                                ) : strategy ? (
+                                    <div className="space-y-6 animate-in">
+                                        <div className="flex justify-between items-end border-b border-white/10 pb-4">
+                                            <div>
+                                                <p className="text-slate-500 text-[8px] font-black uppercase mb-1">Win Probability</p>
+                                                <h3 className="text-emerald-400 text-2xl font-black">{strategy.winProbability}</h3>
+                                            </div>
+                                            <div className="text-right"><p className="text-slate-500 text-[8px] font-black uppercase mb-1">Item Rec</p><p className="text-indigo-300 font-bold text-xs">{strategy.itemRecommendation}</p></div>
+                                        </div>
+                                        <div className="space-y-3 max-h-80 overflow-y-auto custom-scrollbar pr-2">
+                                            {strategy.steps.map((s, i) => (
+                                                <div key={i} className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                                                    <p className="text-[10px] font-black uppercase text-indigo-400 mb-1">T{s.turn}: {s.action}</p>
+                                                    <p className="text-[11px] text-slate-400 leading-relaxed italic">"{s.reasoning}"</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <button onClick={() => setStrategy(null)} className="w-full text-slate-500 font-black text-[9px] uppercase tracking-widest pt-4 hover:text-indigo-400">New Simulation</button>
+                                    </div>
+                                ) : (
+                                    <div className="text-center space-y-8 py-10">
+                                        <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mx-auto text-indigo-400"><Zap size={32}/></div>
+                                        <div>
+                                            <h3 className="font-black text-xs uppercase tracking-widest mb-2">Tactical Engine</h3>
+                                            <p className="text-white/40 text-[10px] leading-relaxed px-4">Populate subjects and moves to initialize strategic simulation.</p>
+                                        </div>
+                                        <button onClick={runSimulation} className="w-full bg-indigo-600 py-5 rounded-3xl font-black text-xs uppercase tracking-widest hover:brightness-110 shadow-lg shadow-indigo-600/20 transition-all">INITIALIZE</button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
